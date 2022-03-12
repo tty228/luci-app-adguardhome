@@ -1,0 +1,114 @@
+#!/bin/sh
+
+gfwfile="/usr/share/AdGuardHome/blacklist_full"
+file_url=`uci get AdGuardHome.AdGuardHome.gfwlist_url` 2>/dev/null
+yaml_path=`uci get AdGuardHome.AdGuardHome.configpath` 2>/dev/null
+gfw_shunt_enable=`uci get AdGuardHome.AdGuardHome.gfw_shunt_enable` 2>/dev/null
+defaultdns="https://doh.opendns.com:443/dns-query"
+chinadns=`uci get AdGuardHome.AdGuardHome.chinadns` 2>/dev/null
+gfwdns=`uci get AdGuardHome.AdGuardHome.gfwdns` 2>/dev/null
+AdGuardHome_file="/usr/share/AdGuardHome/proxy_host"
+log_path="/tmp/AdGuardHome_gfw_updata_log"
+tempfile="/tmp/AdGuardHome_temp_host"
+file_name="/tmp/AdGuardHome_gfwdns"
+AdGuardHome_temp_yaml="/tmp/AdGuardHome_temp_yaml"
+rm -f ${log_path} >/dev/null 2>&1
+
+# 下载 GFW 列表
+function download(){
+	echo "`date "+%Y-%m-%d %H:%M:%S"` [info] Downloading.." >${log_path}
+	wget --no-check-certificate $file_url -O "${tempfile}" 2>$log_path
+	if [ "$?" -eq "0" ]; then
+		echo "`date "+%Y-%m-%d %H:%M:%S"` [info] gfwlist 下载成功" >${log_path}
+
+		echo "$chinadns" >${file_name}
+		for line in $(cat "${tempfile}"); do
+			echo "[/${line}/]${gfwdns}" >>${file_name}
+		done
+		mv -f ${file_name} ${gfwfile}
+		sort_file
+	else
+		echo "`date "+%Y-%m-%d %H:%M:%S"` [！！！] gfwlist 下载失败，请检查网络代理信息或重试" >>${log_path}
+		return 1
+	fi
+}
+
+# 设置 DNS 分流文件
+function set_dns_file(){
+	str_Line=`sed -n '/upstream_dns_file/=' ${yaml_path}|head -n1` 2>/dev/null
+	[ ! -z "${str_Line}" ] && sed -i "${str_Line}d" $yaml_path
+	[ -z "${gfw_shunt_enable}" ] || [ "${gfw_shunt_enable}" -ne "1" ] && echo "`date "+%Y-%m-%d %H:%M:%S"`  [！！！] 分流开关未开启，删除分流设置" >>${log_path} && return 1
+	str_Line=`sed -n '/dns:/=' ${yaml_path}|head -n1` 2>/dev/null
+	echo "  upstream_dns_file: "'"'${gfwfile}'"' >${AdGuardHome_temp_yaml}
+	[ ! -z "${str_Line}" ] && sed -i ${str_Line}" r ${AdGuardHome_temp_yaml}" ${yaml_path}
+	rm -f ${AdGuardHome_temp_yaml} >/dev/null 2>&1
+	echo "`date "+%Y-%m-%d %H:%M:%S"`  [info] 分流设置成功" >>${log_path}
+}
+
+# 规则去重合并
+function sort_file(){
+	echo "`date "+%Y-%m-%d %H:%M:%S"` [info] 进行规则去重合并" >>${log_path}
+	cat ${gfwfile} >"${tempfile}"
+	sed -i '1d' "${tempfile}"
+	for line in $(cat "${AdGuardHome_file}"); do
+		echo "[/${line}/]${gfwdns}" >>"${tempfile}"
+	done
+	sort -u "${tempfile}" >"${tempfile}_gfw"
+	
+	echo "$chinadns" >${file_name}
+	for line in $(cat "${tempfile}_gfw"); do
+		echo "${line%/]*}/]${gfwdns}" >>${file_name}
+	done
+	mv -f ${file_name} ${gfwfile}
+	echo "`date "+%Y-%m-%d %H:%M:%S"` [info] 更新完成，当前规则数目 `cat ${gfwfile} |wc -l`" >>${log_path}
+}
+
+# 删除临时文件
+function del_temp(){
+	rm -f "${tempfile}" ${file_name} ${log_path} "${tempfile}_gfw" >/dev/null 2>&1
+}
+
+# 读取额外的代理列表
+function get_blacklist(){
+	str_enter=$'\n'
+	ssrplus_file="/etc/ssrplus/black.list"
+	passwall_oldfile="/etc/config/black.list"
+	passwall_file="/usr/share/passwall/rules/proxy_host"
+
+	[ -f ${ssrplus_file} ] && ssrplus_black=`cat ${ssrplus_file}|grep -Ev '^$|#'`
+	[ -f ${passwall_oldfile} ] && passwall_oldblack=`cat ${passwall_oldfile}|grep -Ev '^$|#'`
+	[ -f ${passwall_file} ] && passwall_black=`cat ${passwall_file}|grep -Ev '^$|#'`
+	[ -f ${AdGuardHome_file} ] && AdGuardHome_black=`cat ${AdGuardHome_file}|grep -Ev '^$|#'`
+	black_list=${ssrplus_black}${enter}${passwall_oldblack}${enter}${passwall_black}${enter}${AdGuardHome_black}
+	echo "${black_list}"|grep -v "^$"|sort -u >${AdGuardHome_file}
+}
+
+# 若无参数启动，且未打开分流开关，删除分流设置
+if [ -z "${gfw_shunt_enable}" ] || [ "${gfw_shunt_enable}" -ne "1" ] && [ -z "$1" ];then
+	set_dns_file
+	sleep 3 && del_temp
+	exit
+fi
+
+# 启动参数
+if [ "$1" ] ;then
+	if [ $1 == "get_blacklist" ];then
+		del_temp
+		get_blacklist
+	fi
+	if [ $1 == "download" ];then
+		download
+		sleep 3 && del_temp
+		/etc/init.d/AdGuardHome reload
+	fi
+	if [ $1 == "set_dns_file" ];then
+		[ ! -f ${gfwfile} ] && download
+		[ -f ${gfwfile} ] && set_dns_file || echo "`date "+%Y-%m-%d %H:%M:%S"` [info] gfwlist 更新失败" >>${log_path} && sleep 3 && del_temp
+		[ ! -f ${gfwfile} ] && echo "`date "+%Y-%m-%d %H:%M:%S"` [info] 分流未开启" >>${log_path} && sleep 3 && del_temp
+	fi
+	if [ $1 == "sort_file" ];then
+		sort_file
+	fi
+	exit
+fi
+

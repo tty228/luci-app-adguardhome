@@ -1,0 +1,17 @@
+dns.google
+github.com
+github.io
+githubusercontent.com
+google.com
+google.com.hk
+google.com.tw
+googleapis.cn
+googleapis.com
+gstatic.com
+instagram.com
+openwrt.org
+services.googleapis.cn
+twitter.com
+v2ex.com
+xn--ngstr-lra8j.com
+youtube.com
