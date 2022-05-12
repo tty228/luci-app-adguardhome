@@ -49,9 +49,9 @@ stop_forward_dnsmasq()
 	uci del_list dhcp.@dnsmasq[0].server=$addr 2>/dev/null
 	addrlist="`uci get dhcp.@dnsmasq[0].server 2>/dev/null`"
 	if [ -z "$addrlist" ] ; then
-		resolvfile="/tmp/resolv.conf.d/resolv.conf.auto"
-		[ ! -f "$resolvfile" ] && resolvfile="/tmp/resolv.conf.auto"
-		uci set dhcp.@dnsmasq[0].resolvfile="$resolvfile" 2>/dev/null
+		[ "$(uci get dhcp.@dnsmasq[0].resolvfile)" != "/tmp/resolv.conf.d/resolv.conf.auto" ] && {
+		uci set dhcp.@dnsmasq[0].resolvfile="/tmp/resolv.conf.d/resolv.conf.auto"
+		}
 		uci delete dhcp.@dnsmasq[0].noresolv 2>/dev/null
 	fi
 	uci commit dhcp
@@ -356,11 +356,11 @@ testbackup(){
 restore()
 {
 	config_get workdir $CONFIGURATION workdir "/usr/bin/AdGuardHome"
-	config_get backupwdpath $CONFIGURATION backupwdpath "/usr/bin/AdGuardHome"
+	config_get backupwdpath $CONFIGURATION workdir "/usr/bin/AdGuardHome"
 	cp -u -r -f $backupwdpath/data $workdir
 }
 backup() {
-	config_get backupwdpath $CONFIGURATION backupwdpath "/usr/bin/AdGuardHome"
+	config_get backupwdpath $CONFIGURATION workdir "/usr/bin/AdGuardHome"
 	mkdir -p $backupwdpath/data
 	config_get workdir $CONFIGURATION workdir "/usr/bin/AdGuardHome"
 	config_get backupfile $CONFIGURATION backupfile ""
@@ -387,7 +387,6 @@ backup() {
 	done
 }
 start_service() {
-	/usr/share/AdGuardHome/blacklist_full_wget set_dns_file
 	# Reading config
 	rm /var/run/AdGserverdis >/dev/null 2>&1
 	config_load "${CONFIGURATION}"

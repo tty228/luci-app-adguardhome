@@ -9,13 +9,14 @@ mkdir -p ${binpath%/*}
 upxflag=$(uci get AdGuardHome.AdGuardHome.upxflag 2>/dev/null)
 
 check_if_already_running(){
+	sleep 1
 	running_tasks="$(ps |grep "AdGuardHome" |grep "update_core" |grep -v "grep" |awk '{print $1}' |wc -l)"
 	[ "${running_tasks}" -gt "2" ] && echo -e "\nA task is already running."  && EXIT 2
 }
 
 check_wgetcurl(){
 	which curl && downloader="curl -L -k --retry 2 --connect-timeout 20 -o" && return
-	which wget && downloader="wget --no-check-certificate -t 2 -T 20 -O" && return
+	which wget-ssl && downloader="wget-ssl --no-check-certificate -t 2 -T 20 -O" && return
 	[ -z "$1" ] && opkg update || (echo error opkg && EXIT 1)
 	[ -z "$1" ] && (opkg remove wget wget-nossl --force-depends ; opkg install wget ; check_wgetcurl 1 ;return)
 	[ "$1" == "1" ] && (opkg install curl ; check_wgetcurl 2 ; return)
@@ -27,7 +28,7 @@ check_latest_version(){
 	if [ -z "${latest_ver}" ]; then
 		echo -e "\nFailed to check latest version, please try again later."  && EXIT 1
 	fi
-	now_ver="$($binpath -c /dev/null --check-config 2>&1| grep -m 1 -E 'v[0-9.]+' -o)"
+	now_ver="$($binpath --version 2>/dev/null | grep -m 1 -E '[0-9]+[.][0-9.]+' -o)"
 	if [ "${latest_ver}"x != "${now_ver}"x ] || [ "$1" == "force" ]; then
 		echo -e "Local version: ${now_ver}., cloud version: ${latest_ver}." 
 		doupdate_core
@@ -130,20 +131,16 @@ doupdate_core(){
 	Arch="amd64"
 	;;
 	"mipsel")
-	Arch="mipsle"
+	Arch="mipsle_softfloat"
 	;;
 	"mips64el")
-	Arch="mips64le"
-	Arch="mipsle"
-	echo -e "mips64el use $Arch may have bug" 
+	Arch="mips64le_softfloat"
 	;;
 	"mips")
-	Arch="mips"
+	Arch="mips_softfloat"
 	;;
 	"mips64")
-	Arch="mips64"
-	Arch="mips"
-	echo -e "mips64 use $Arch may have bug" 
+	Arch="mips64_softfloat"
 	;;
 	"arm")
 	Arch="arm"
