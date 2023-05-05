@@ -106,6 +106,7 @@ if [ "$1" ] ;then
 	fi
 	if [ $1 == "download" ];then
 		download
+		set_dns_file
 		sleep 3 && del_temp
 		/etc/init.d/AdGuardHome reload
 	fi
