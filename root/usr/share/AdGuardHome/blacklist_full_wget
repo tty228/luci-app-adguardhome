@@ -10,6 +10,7 @@ gfwdns=`uci get AdGuardHome.AdGuardHome.gfwdns` 2>/dev/null
 AdGuardHome_file="/usr/share/AdGuardHome/proxy_host"
 log_path="/tmp/AdGuardHome_gfw_updata_log"
 tempfile="/tmp/AdGuardHome_temp_host"
+tempgfw="/usr/share/AdGuardHome/gfwfile"
 file_name="/tmp/AdGuardHome_gfwdns"
 AdGuardHome_temp_yaml="/tmp/AdGuardHome_temp_yaml"
 rm -f ${log_path} >/dev/null 2>&1
@@ -20,20 +21,27 @@ function download(){
 	wget --no-check-certificate $file_url -O "${tempfile}" 2>$log_path
 	if [ "$?" -eq "0" ]; then
 		echo "`date "+%Y-%m-%d %H:%M:%S"` [info] gfwlist 下载成功" >${log_path}
-
-		echo "$chinadns" >${file_name}
-		for line in $(cat "${tempfile}"); do
-			echo "[/${line}/]${gfwdns}" >>${file_name}
-		done
-		mv -f ${file_name} ${gfwfile}
-		sort_file
+		\cp -rf "${tempfile}" "${tempgfw}"
+		mod_dns_file
 	else
 		echo "`date "+%Y-%m-%d %H:%M:%S"` [！！！] gfwlist 下载失败，请检查网络代理信息或重试" >>${log_path}
+		\cp -rf "${tempgfw}" "${tempfile}"
+		mod_dns_file
 		return 1
 	fi
 }
 
-# 设置 DNS 分流文件
+# 修改 DNS 分流文件
+function mod_dns_file(){		
+	echo "$chinadns" >${file_name}
+	for line in $(cat "${tempfile}"); do
+		echo "[/${line}/]${gfwdns}" >>${file_name}
+	done
+	mv -f ${file_name} ${gfwfile}
+	sort_file
+}
+
+# 设置 DNS 分流
 function set_dns_file(){
 	str_Line=`sed -n '/upstream_dns_file/=' ${yaml_path}|head -n1` 2>/dev/null
 	[ ! -z "${str_Line}" ] && sed -i "${str_Line}d" $yaml_path
@@ -79,7 +87,7 @@ function get_blacklist(){
 	[ -f ${passwall_oldfile} ] && passwall_oldblack=`cat ${passwall_oldfile}|grep -Ev '^$|#'`
 	[ -f ${passwall_file} ] && passwall_black=`cat ${passwall_file}|grep -Ev '^$|#'`
 	[ -f ${AdGuardHome_file} ] && AdGuardHome_black=`cat ${AdGuardHome_file}|grep -Ev '^$|#'`
-	black_list=${ssrplus_black}${enter}${passwall_oldblack}${enter}${passwall_black}${enter}${AdGuardHome_black}
+	black_list=${ssrplus_black}${str_enter}${passwall_oldblack}${str_enter}${passwall_black}${str_enter}${AdGuardHome_black}
 	echo "${black_list}"|grep -v "^$"|sort -u >${AdGuardHome_file}
 }
 
@@ -102,7 +110,7 @@ if [ "$1" ] ;then
 		/etc/init.d/AdGuardHome reload
 	fi
 	if [ $1 == "set_dns_file" ];then
-		[ ! -f ${gfwfile} ] && download
+		[ ! -f ${gfwfile} ] || [ ! -f ${tempgfw} ] && download
 		[ -f ${gfwfile} ] && set_dns_file || echo "`date "+%Y-%m-%d %H:%M:%S"` [info] gfwlist 更新失败" >>${log_path} && sleep 3 && del_temp
 		[ ! -f ${gfwfile} ] && echo "`date "+%Y-%m-%d %H:%M:%S"` [info] 分流未开启" >>${log_path} && sleep 3 && del_temp
 	fi
@@ -111,4 +119,3 @@ if [ "$1" ] ;then
 	fi
 	exit
 fi
-
